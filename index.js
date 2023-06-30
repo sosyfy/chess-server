@@ -3,6 +3,7 @@ const express = require('express');
 const http = require('http');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const { log } = require('console');
 require("dotenv").config()
 
 const userSocketMap = {};
@@ -19,6 +20,8 @@ const io = require("socket.io")(server, {
         credentials: true
     }
 });
+
+console.log(process.env.CLIENT);
 
 app.use(cors({
     "origin": "*",
@@ -97,10 +100,6 @@ async function joinExistingGame(gameId, playerId) {
 
 
 io.on('connection', (socket) => {
-    // console.log(`Socket ${socket.id} connected`);
-
-
-
     // console.log(userSocket);
     socket.on('create-game', ({ playerId, color }) => {
         createNewGame(playerId, color)
@@ -117,9 +116,9 @@ io.on('connection', (socket) => {
 
     socket.on('join-game', ({ gameId, playerId }) => {
         joinExistingGame(gameId, playerId)
-            .then(() => {
+            .then((gameData) => {
                 socket.join(gameId);
-                io.to(gameId).emit("player-joined", { gameId, playerId });
+                io.to(gameId).emit("player-joined", { gameId, playerId , gameData});
                 userSocketMap[playerId] = socket.id;
             })
             .catch((error) => {
@@ -131,15 +130,11 @@ io.on('connection', (socket) => {
     // Implement your own logic for updating game state and notifying players
 
     socket.on('make-move', async ({ gameId, playerId, moveData }) => {
-        const filter = { gameId }
         const data = { fen: moveData.fen }
+        io.to(gameId).emit('opponent-made-move', { data })
+        const filter = { gameId }
         socket.join(gameId)
-        const gameData = await GameModel.findOneAndUpdate(filter, data);
-        let senderId = playerId
-
-        io.to(gameId).emit('opponent-made-move', { gameData, senderId, moveData })
-
-        // socket.emit('opponent-made-move', { gameId, moveData })
+        await GameModel.findOneAndUpdate(filter, data);
     });
 
     socket.on("get-game", async ({ gameId }) => {
