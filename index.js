@@ -3,6 +3,7 @@ const express = require('express');
 const http = require('http');
 const mongoose = require('mongoose');
 const cors = require('cors');
+require("dotenv").config()
 
 const userSocketMap = {};
 
@@ -12,7 +13,7 @@ const app = express();
 const server = http.createServer(app);
 const io = require("socket.io")(server, {
     cors: {
-        origin: "http://localhost:5173",
+        origin: process.env.CLIENT,
         methods: ["GET", "POST"],
         allowedHeaders: ["my-custom-header"],
         credentials: true
@@ -39,7 +40,7 @@ function generateRandomString() {
 // Connect to MongoDB using Mongoose
 const connectDB = async () => {
     try {
-        const conn = await mongoose.connect("mongodb://0.0.0.0:27017/chess", {
+        const conn = await mongoose.connect(process.env.DB, {
             useNewUrlParser: true,
             useUnifiedTopology: true
         });
