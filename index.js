@@ -1,31 +1,22 @@
-// Import required modules and initialize express app
-const express = require('express');
-const http = require('http');
-const mongoose = require('mongoose');
-const cors = require('cors');
-const { log } = require('console');
+const uWS = require('uWebSockets.js');
 require("dotenv").config()
+const mongoose = require('mongoose');
 
-const userSocketMap = {};
 
+// Function to decode the incoming message
+const decodeMessage = (message) => {
+    const buffer = Buffer.from(message);
+    const jsonString = buffer.toString();
+    const { event, data } = JSON.parse(jsonString);
+    return { event, data };
+};
 
-// Create an instance of the express app
-const app = express();
-const server = http.createServer(app);
-const io = require("socket.io")(server, {
-    cors: {
-        origin: process.env.CLIENT,
-        methods: ["GET", "POST"],
-        allowedHeaders: ["my-custom-header"],
-        credentials: true
-    }
-});
-
-console.log(process.env.CLIENT);
-
-app.use(cors({
-    "origin": "*",
-}))
+// Function to encode a JSON object into a Uint8Array buffer
+const encodeMessage = (jsonObject) => {
+    const jsonString = JSON.stringify(jsonObject);
+    const buffer = Buffer.from(jsonString);
+    return new Uint8Array(buffer);
+};
 
 function generateRandomString() {
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -38,7 +29,6 @@ function generateRandomString() {
 
     return randomString;
 }
-
 
 // Connect to MongoDB using Mongoose
 const connectDB = async () => {
@@ -53,7 +43,6 @@ const connectDB = async () => {
         process.exit(1);
     }
 }
-
 connectDB()
 
 // Define Game schema and model using Mongoose
@@ -76,6 +65,7 @@ async function createNewGame(playerId, color) {
         player1Id: playerId,
         player2Id: null, // Initially no second player is assigned 
         color: color,
+        fen: null
     });
 
     return newGame;
@@ -94,57 +84,109 @@ async function joinExistingGame(gameId, playerId) {
     }
 
     else {
-        throw Error("Invalid or full game ID");
+        console.log(existingGame);
+        throw Error("Game Link Expired");
     }
 }
 
+// Create a uWebSockets.js server
+const app = uWS.App();
 
-io.on('connection', (socket) => {
-    // console.log(userSocket);
-    socket.on('create-game', ({ playerId, color }) => {
-        createNewGame(playerId, color)
-            .then((newGame) => {
+// WebSocket route
+app.ws('/*', {
+    compression: uWS.SHARED_COMPRESSOR,
+    maxPayloadLength: 16 * 1024 * 1024,
+    idleTimeout: 0,
+    // sendPingsAutomatically: true,
+    open: (ws) => {
+        console.log('WebSocket connected', ws.getUserData());
+    },
+    message: async (ws, message, isBinary) => {
+      
+        console.log('WebSocket message received');
+        const { event, data } =  decodeMessage(message);
+        // Handle different events
+        switch (event) {
+            case 'create-game':
+                createNewGame(data.playerId, data.color)
+                    .then((newGame) => {
+                        ws.subscribe(newGame.gameId);
+                        // userSocketMap[playerId] = ws.id;
+                        const mess = encodeMessage({ event: 'game-created', data: newGame });
+                        ws.send(mess)
+            
+                    })
+                    .catch((error) => {
+                        const mess = encodeMessage({ event: 'game-creation-failed', data: error.message });
+                        ws.send(mess)
+                    });
 
-                socket.join(newGame.gameId);
-                userSocketMap[playerId] = socket.id;
-                socket.emit('game-created', newGame);
-            })
-            .catch((error) => {
-                socket.emit('game-creation-failed', error.message);
-            });
-    });
+                break;
+            case 'join-game':
+                joinExistingGame(data.gameId, data.playerId)
+                    .then((gameData) => {
+                        ws.subscribe(gameData.gameId);
+                        const mess = encodeMessage({ event: "player-joined", data: { gameId: gameData.gameId, playerId: data.playerId, gameData: gameData } });
+                        ws.publish(data.gameId, mess)
+                    })
+                    .catch((error) => {
+                        const mess = encodeMessage({ event: 'join-game-failed', data: error.message });
+                        ws.send(mess)
+                    });
+                break;
 
-    socket.on('join-game', ({ gameId, playerId }) => {
-        joinExistingGame(gameId, playerId)
-            .then((gameData) => {
-                socket.join(gameId);
-                io.to(gameId).emit("player-joined", { gameId, playerId , gameData});
-                userSocketMap[playerId] = socket.id;
-            })
-            .catch((error) => {
-                socket.emit('join-game-failed', error.message);
-            });
-    });
+            case 'make-move':
+                try {
+                    const mess = encodeMessage({ event: 'opponent-made-move', data: { fen: data?.moveData?.fen } })
+                    ws.subscribe(data.gameId)
+                    ws.publish(data.gameId, mess)
 
-    // Handle real-time updates and moves
-    // Implement your own logic for updating game state and notifying players
+                    const filter = { gameId: data.gameId }
+                    const dataMod = { fen: data.moveData.fen }
+                    await GameModel.findOneAndUpdate(filter, dataMod);
+                } catch (error) {
+                    console.log("move error", error.message);
+                }
 
-    socket.on('make-move', async ({ gameId, playerId, moveData }) => {
-        const data = { fen: moveData.fen }
-        io.to(gameId).emit('opponent-made-move', { data })
-        const filter = { gameId }
-        socket.join(gameId)
-        await GameModel.findOneAndUpdate(filter, data);
-    });
+                break;
+            case 'get-game':
+                try {
+                    ws.subscribe(data.gameId)
+                    const info = await GameModel.findOne({ gameId: data.gameId })
+        
+                    const messy = encodeMessage({ event: "game-details", data: info })
+                    ws.send(messy)
 
-    socket.on("get-game", async ({ gameId }) => {
-        socket.join(gameId)
-        const data = await GameModel.findOne({ gameId })
-        socket.emit("game-details", { data })
-    })
+                } catch (error) {
+                    console.log("get-game-error", error.message)
+                }
+                break;
+            case 'ping':
+                ws.send(message)
+                break
+            default:
+                console.log('Unknown event:', event);
+                break;
+        }
 
+        console.log(event, data);
+        // Send a response
+        // ws.send(message);
+    },
+
+    close: (ws, code, message) => {
+        console.log('WebSocket closed', code, message);
+    }
 });
 
 // Start the server
-const port = process.env.PORT || 3000;
-server.listen(port, () => console.log(`Server running on port ${port}`));
+let PORT = process.env.PORT || 3000
+app.listen(Number(PORT), (token) => {
+    if (token) {
+        console.log(`Server running on port ${PORT}`);
+    } else {
+        console.log('Failed to listen to uWebSockets.js server', token);
+    }
+});
+
+
