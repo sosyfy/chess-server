@@ -126,8 +126,8 @@ app.ws('/*', {
                 joinExistingGame(data.gameId, data.playerId)
                     .then((gameData) => {
                         ws.subscribe(gameData.gameId);
-                        const mess = encodeMessage({ event: "player-joined", data: { gameId: gameData.gameId, playerId: data.playerId, gameData: gameData } });
-                        ws.publish(data.gameId, mess)
+                        const message = encodeMessage({ event: "player-joined", data: { gameId: gameData.gameId, playerId: gameData.player2Id, gameData: gameData } });
+                        ws.publish(gameData.gameId, message)
                     })
                     .catch((error) => {
                         const mess = encodeMessage({ event: 'join-game-failed', data: error.message });
