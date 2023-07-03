@@ -58,12 +58,12 @@ const GameModel = mongoose.model('Game', gameSchema);
 
 // Function to create a new game
 async function createNewGame(playerId, color) {
-    const gameId = generateRandomString(); // Implement your own function to generate unique random strings
+    const gameId = generateRandomString(); 
 
     const newGame = await GameModel.create({
         gameId,
         player1Id: playerId,
-        player2Id: null, // Initially no second player is assigned 
+        player2Id: null, 
         color: color,
         fen: null
     });
@@ -102,9 +102,9 @@ app.ws('/*', {
         console.log('WebSocket connected', ws.getUserData());
     },
     message: async (ws, message, isBinary) => {
-      
+
         console.log('WebSocket message received');
-        const { event, data } =  decodeMessage(message);
+        const { event, data } = decodeMessage(message);
         // Handle different events
         switch (event) {
             case 'create-game':
@@ -114,7 +114,7 @@ app.ws('/*', {
                         // userSocketMap[playerId] = ws.id;
                         const mess = encodeMessage({ event: 'game-created', data: newGame });
                         ws.send(mess)
-            
+
                     })
                     .catch((error) => {
                         const mess = encodeMessage({ event: 'game-creation-failed', data: error.message });
@@ -137,7 +137,7 @@ app.ws('/*', {
 
             case 'make-move':
                 try {
-                    const mess = encodeMessage({ event: 'opponent-made-move', data: { fen: data?.moveData?.fen } })
+                    const mess = encodeMessage({ event: 'opponent-made-move', data: data.moveData.move })
                     ws.subscribe(data.gameId)
                     ws.publish(data.gameId, mess)
 
@@ -153,7 +153,7 @@ app.ws('/*', {
                 try {
                     ws.subscribe(data.gameId)
                     const info = await GameModel.findOne({ gameId: data.gameId })
-        
+
                     const messy = encodeMessage({ event: "game-details", data: info })
                     ws.send(messy)
 
@@ -169,7 +169,7 @@ app.ws('/*', {
                 break;
         }
 
-        console.log(event, data);
+        // console.log(event, data);
         // Send a response
         // ws.send(message);
     },
