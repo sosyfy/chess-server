@@ -58,12 +58,12 @@ const GameModel = mongoose.model('Game', gameSchema);
 
 // Function to create a new game
 async function createNewGame(playerId, color) {
-    const gameId = generateRandomString(); 
+    const gameId = generateRandomString();
 
     const newGame = await GameModel.create({
         gameId,
         player1Id: playerId,
-        player2Id: null, 
+        player2Id: null,
         color: color,
         fen: null
     });
@@ -123,15 +123,20 @@ app.ws('/*', {
 
                 break;
             case 'join-game':
+                ws.subscribe(data.gameId);
                 joinExistingGame(data.gameId, data.playerId)
                     .then((gameData) => {
-                        ws.subscribe(gameData.gameId);
                         const message = encodeMessage({ event: "player-joined", data: { gameId: gameData.gameId, playerId: gameData.player2Id, gameData: gameData } });
-                        ws.publish(gameData.gameId, message)
+                        ws.cork(() => {
+                            ws.publish(data.gameId, message)
+                            ws.send(message) 
+                        });
                     })
                     .catch((error) => {
+
                         const mess = encodeMessage({ event: 'join-game-failed', data: error.message });
                         ws.send(mess)
+                        ws.unsubscribe(data.gameId)
                     });
                 break;
 
