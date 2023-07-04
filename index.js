@@ -3,7 +3,7 @@ require("dotenv").config()
 const mongoose = require('mongoose');
 
 
-// Function to decode the incoming message
+
 const decodeMessage = (message) => {
     const buffer = Buffer.from(message);
     const jsonString = buffer.toString();
@@ -11,7 +11,7 @@ const decodeMessage = (message) => {
     return { event, data };
 };
 
-// Function to encode a JSON object into a Uint8Array buffer
+
 const encodeMessage = (jsonObject) => {
     const jsonString = JSON.stringify(jsonObject);
     const buffer = Buffer.from(jsonString);
@@ -30,7 +30,7 @@ function generateRandomString() {
     return randomString;
 }
 
-// Connect to MongoDB using Mongoose
+
 const connectDB = async () => {
     try {
         const conn = await mongoose.connect(process.env.DB, {
@@ -45,7 +45,7 @@ const connectDB = async () => {
 }
 connectDB()
 
-// Define Game schema and model using Mongoose
+
 const gameSchema = new mongoose.Schema({
     gameId: String,
     player1Id: String,
@@ -56,7 +56,7 @@ const gameSchema = new mongoose.Schema({
 
 const GameModel = mongoose.model('Game', gameSchema);
 
-// Function to create a new game
+
 async function createNewGame(playerId, color) {
     const gameId = generateRandomString();
 
@@ -71,7 +71,7 @@ async function createNewGame(playerId, color) {
     return newGame;
 }
 
-// Function to join an existing game with provided gameId if available
+
 async function joinExistingGame(gameId, playerId) {
     const existingGame = await GameModel.findOne({ gameId });
 
@@ -89,32 +89,22 @@ async function joinExistingGame(gameId, playerId) {
     }
 }
 
-// Create a uWebSockets.js server
 const app = uWS.App();
 
-// WebSocket route
 app.ws('/*', {
     compression: uWS.SHARED_COMPRESSOR,
     maxPayloadLength: 16 * 1024 * 1024,
     idleTimeout: 0,
-    // sendPingsAutomatically: true,
-    open: (ws) => {
-        console.log('WebSocket connected', ws.getUserData());
-    },
     message: async (ws, message, isBinary) => {
-
-        console.log('WebSocket message received');
         const { event, data } = decodeMessage(message);
-        // Handle different events
+     
         switch (event) {
             case 'create-game':
                 createNewGame(data.playerId, data.color)
                     .then((newGame) => {
                         ws.subscribe(newGame.gameId);
-                        // userSocketMap[playerId] = ws.id;
                         const mess = encodeMessage({ event: 'game-created', data: newGame });
                         ws.send(mess)
-
                     })
                     .catch((error) => {
                         const mess = encodeMessage({ event: 'game-creation-failed', data: error.message });
@@ -174,9 +164,6 @@ app.ws('/*', {
                 break;
         }
 
-        // console.log(event, data);
-        // Send a response
-        // ws.send(message);
     },
 
     close: (ws, code, message) => {
@@ -184,7 +171,7 @@ app.ws('/*', {
     }
 });
 
-// Start the server
+
 let PORT = process.env.PORT || 3000
 app.listen(Number(PORT), (token) => {
     if (token) {
